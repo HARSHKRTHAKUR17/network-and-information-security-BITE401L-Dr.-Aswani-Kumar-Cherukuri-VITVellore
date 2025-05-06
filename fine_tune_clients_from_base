@@ -1,0 +1,67 @@
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.models import load_model
+from sklearn.model_selection import train_test_split
+from sklearn.utils import class_weight
+import os
+
+# Loop through each client
+for client_id in range(5):
+    print(f"\n📦 Training model for Client {client_id}...")
+
+    data_file = f"client_data_npy/client_data_{client_id}.npy"
+    label_file = f"client_data_npy/client_labels_{client_id}.npy"
+
+    if not os.path.exists(data_file) or not os.path.exists(label_file):
+        print(f"❌ Missing data or label file for client {client_id}. Skipping.")
+        continue
+
+    # ✅ Load data
+    X = np.load(data_file)
+    y = np.load(label_file)
+
+    # ✅ Reshape input to match (samples, features, 1)
+    if len(X.shape) == 2:
+        X = np.expand_dims(X, axis=2)  # Now shape is (samples, 4, 1)
+
+    # ✅ Train/validation split
+    X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    # ✅ Compute class weights to handle imbalance
+    try:
+        class_weights = class_weight.compute_class_weight(
+            class_weight='balanced',
+            classes=np.unique(y_train),
+            y=y_train
+        )
+        class_weight_dict = dict(enumerate(class_weights))
+    except:
+        class_weight_dict = None
+
+    print(f"  Class weights: {class_weight_dict}")
+
+    # ✅ Load base model
+    if not os.path.exists("base_model.h5"):
+        print("❌ base_model.h5 not found. Make sure it's in the current directory.")
+        break
+
+    model = load_model("base_model.h5")
+
+    # ✅ Recompile the model (important after loading)
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+    # ✅ Train the model
+    model.fit(
+        X_train,
+        y_train,
+        validation_data=(X_val, y_val),
+        epochs=5,
+        batch_size=32,
+        class_weight=class_weight_dict,
+        verbose=2
+    )
+
+    # ✅ Save the trained model
+    save_path = f"client{client_id}_trained_model.h5"
+    model.save(save_path)
+    print(f"✅ Saved trained model for Client {client_id} at: {save_path}")
